@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # PHP gRPC Backend Service
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "9001:9001"
+    environment:
+      - PHP_DISPLAY_ERRORS=1
+      - PHP_ERROR_REPORTING=E_ALL
+    volumes:
+      - ./backend:/app
+      - backend_vendor:/app/vendor
+    healthcheck:
+      test: ["CMD", "php", "-r", "echo 'OK';"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - grpc-network
+
+  # Envoy Proxy for gRPC-Web compatibility
+  grpc-proxy:
+    image: envoyproxy/envoy-alpine:v1.22-latest
+    ports:
+      - "8080:8080"
+      - "9901:9901"  # Admin interface
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9901/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - grpc-network
+
+  # React Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - grpc-proxy
+    environment:
+      - REACT_APP_GRPC_ENDPOINT=http://localhost:8080
+    networks:
+      - grpc-network
+
+  # Optional: Development database (if needed for future extensions)
+  # database:
+  #   image: mysql:8.0
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: rootpassword
+  #     MYSQL_DATABASE: grpc_app
+  #     MYSQL_USER: grpc_user
+  #     MYSQL_PASSWORD: grpc_password
+  #   ports:
+  #     - "3306:3306"
+  #   volumes:
+  #     - db_data:/var/lib/mysql
+  #   networks:
+  #     - grpc-network
+
+networks:
+  grpc-network:
+    driver: bridge
+
+volumes:
+  backend_vendor:
+  # db_data:
